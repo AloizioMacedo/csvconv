@@ -24,17 +24,12 @@ struct Cli {
     /// New string delimiter. Must be one character.
     new_delimiter: String,
 
-    /// File or directory path. If directory, must add --dir option to call.
-    /// Directory search is recursive.
+    /// File or directory path. Directory search is recursive.
     path: std::path::PathBuf,
 
     /// Checks if the file is valid csv by counting delimiters in the lines.
     #[arg(short, long)]
     check: bool,
-
-    /// Allows for whole directory run.
-    #[arg(short, long)]
-    dir: bool,
 }
 
 struct CliInfo {
@@ -58,11 +53,7 @@ impl CliInfo {
 fn main() -> Result<(), FileError> {
     let args = Cli::parse();
 
-    if !args.dir {
-        if args.path.is_dir() {
-            return Err(FileError::FileIsDirectory(FileIsDirectoryError {}));
-        }
-
+    if !args.path.is_dir() {
         let pb = MultiProgress::new();
         return parse_file(&CliInfo::new(&args), PathBuf::from(OUTPUT_NAME), &pb);
     } else {
