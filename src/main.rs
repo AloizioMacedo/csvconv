@@ -1,7 +1,9 @@
-use indicatif::ProgressBar;
+use indicatif::{MultiProgress, ProgressBar};
+use itertools::Itertools;
 use std::fmt;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
+use std::thread;
 use std::{
     fs::{read_dir, File},
     io::{BufRead, BufReader, BufWriter, Write},
@@ -52,40 +54,62 @@ fn main() -> Result<(), FileError> {
             return Err(FileError::FileIsDirectory(FileIsDirectoryError {}));
         }
 
-        parse_file(&CliInfo::new(&args), PathBuf::from(OUTPUT_NAME))
+        let pb = MultiProgress::new();
+        return parse_file(&CliInfo::new(&args), PathBuf::from(OUTPUT_NAME), &pb);
     } else {
         let parent = args.path.parent().expect("Could not get parent folder.");
 
         create_dir_all(parent.join(OUTPUT_FOLDER))?;
 
-        for file in read_dir(PathBuf::from(args.path.to_owned()))? {
-            let mut cli_info = CliInfo::new(&args);
+        let files_chunks = read_dir(PathBuf::from(args.path.to_owned()))?.chunks(4);
+        let files_chunks = files_chunks.into_iter();
 
-            let file = file.ok();
+        for files in files_chunks {
+            let pb = MultiProgress::new();
 
-            if let None = file {
-                continue;
-            }
-
-            let file = file.unwrap();
-            cli_info.path = file.path();
-
-            if let Err(error) =
-                parse_file(&cli_info, parent.join(OUTPUT_FOLDER).join(file.file_name()))
-            {
-                println!(
-                    "File {:?} couldn't be processed. {:?}.",
-                    file.file_name(),
-                    error
-                );
-            }
+            thread::scope(|s| {
+                for file in files {
+                    s.spawn(|| {
+                        process_file(&args, file, parent, &pb);
+                    });
+                }
+            });
         }
+    }
 
-        Ok(())
+    Ok(())
+}
+
+fn process_file(
+    args: &Cli,
+    file: Result<std::fs::DirEntry, std::io::Error>,
+    parent: &std::path::Path,
+    pb: &MultiProgress,
+) {
+    let mut cli_info = CliInfo::new(args);
+    let file = file.ok();
+
+    if let None = file {
+        println!("File couldn't be processed.");
+    }
+
+    let file = file.unwrap();
+    cli_info.path = file.path();
+
+    if let Err(error) = parse_file(
+        &cli_info,
+        parent.join(OUTPUT_FOLDER).join(file.file_name()),
+        pb,
+    ) {
+        println!(
+            "File {:?} couldn't be processed. {:?}.",
+            file.file_name(),
+            error
+        );
     }
 }
 
-fn parse_file(args: &CliInfo, file_to_write: PathBuf) -> Result<(), FileError> {
+fn parse_file(args: &CliInfo, file_to_write: PathBuf, pb: &MultiProgress) -> Result<(), FileError> {
     if args.new_sep.graphemes(true).count() != 1 {
         return Err(FileError::Delimiter(DelimiterError {
             invalid_delimiter: args.new_sep.to_owned(),
@@ -95,8 +119,8 @@ fn parse_file(args: &CliInfo, file_to_write: PathBuf) -> Result<(), FileError> {
     let file_to_read = File::open(&args.path)?;
 
     let total_size = file_to_read.metadata()?.len();
+    let pb2 = pb.add(ProgressBar::new(total_size));
     let mut size_seen = 0;
-    let pb = ProgressBar::new(total_size);
 
     let file_to_write = File::create(file_to_write)?;
 
@@ -107,7 +131,7 @@ fn parse_file(args: &CliInfo, file_to_write: PathBuf) -> Result<(), FileError> {
         &mut reader,
         &mut writer,
         &mut size_seen,
-        &pb,
+        &pb2,
         &args.original_sep,
         &args.new_sep,
         args.check,
@@ -120,7 +144,7 @@ fn parse_file(args: &CliInfo, file_to_write: PathBuf) -> Result<(), FileError> {
                 &mut reader,
                 &mut writer,
                 &mut size_seen,
-                &pb,
+                &pb2,
                 &args,
                 count_from_first_line,
             )?;
@@ -128,7 +152,7 @@ fn parse_file(args: &CliInfo, file_to_write: PathBuf) -> Result<(), FileError> {
             Ok(())
         }
         LineProcessingResult::Any => {
-            run_lines_without_consistency_check(reader, writer, size_seen, pb, args)?;
+            run_lines_without_consistency_check(reader, writer, size_seen, &pb2, args)?;
 
             Ok(())
         }
@@ -139,7 +163,7 @@ fn run_lines_without_consistency_check(
     mut reader: BufReader<File>,
     mut writer: BufWriter<File>,
     mut size_seen: usize,
-    pb: ProgressBar,
+    pb: &ProgressBar,
     args: &CliInfo,
 ) -> Result<(), std::io::Error> {
     loop {
