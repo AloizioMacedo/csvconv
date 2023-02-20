@@ -136,7 +136,7 @@ fn parse_file(args: &CliInfo, file_to_write: PathBuf, pb: &MultiProgress) -> Res
     let pb2 = pb.add(ProgressBar::new(total_size));
 
     let sty = ProgressStyle::with_template(
-        "{spinner:.green} [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})",
+        "{spinner:.green} [{msg} {wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})",
     )
     .unwrap()
     .progress_chars("#>-");
@@ -161,23 +161,20 @@ fn parse_file(args: &CliInfo, file_to_write: PathBuf, pb: &MultiProgress) -> Res
     )?;
 
     match first_line_result {
-        LineProcessingResult::EndOfFile => Ok(()),
-        LineProcessingResult::Some(count_from_first_line) => {
-            run_lines_with_consistency_check(
-                &mut reader,
-                &mut writer,
-                &mut size_seen,
-                &pb2,
-                &args,
-                count_from_first_line,
-            )?;
-
+        LineProcessingResult::EndOfFile => {
+            pb2.finish_with_message(format!("File {:?} done!", &args.path.file_name().unwrap()));
             Ok(())
         }
+        LineProcessingResult::Some(count_from_first_line) => run_lines_with_consistency_check(
+            &mut reader,
+            &mut writer,
+            &mut size_seen,
+            &pb2,
+            &args,
+            count_from_first_line,
+        ),
         LineProcessingResult::Any => {
-            run_lines_without_consistency_check(reader, writer, size_seen, &pb2, args)?;
-
-            Ok(())
+            run_lines_without_consistency_check(reader, writer, size_seen, &pb2, args)
         }
     }
 }
@@ -188,7 +185,7 @@ fn run_lines_without_consistency_check(
     mut size_seen: usize,
     pb: &ProgressBar,
     args: &CliInfo,
-) -> Result<(), std::io::Error> {
+) -> Result<(), FileError> {
     loop {
         let next_line_result = process_line(
             &mut reader,
@@ -232,14 +229,22 @@ fn run_lines_with_consistency_check(
         match next_line_result {
             LineProcessingResult::Some(number_in_this_line) => {
                 if number_to_compare != number_in_this_line {
-                    return Err(FileError::DifferentCount(CountError {
+                    let error = CountError {
                         delimiters_at_header: number_to_compare,
                         delimiters_at_line: number_in_this_line,
                         line_number,
-                    }));
+                    };
+                    pb.finish_with_message(format!(
+                        "File {:?}: {error:?}",
+                        args.path.file_name().unwrap()
+                    ));
+                    return Err(FileError::DifferentCount(error));
                 }
             }
-            LineProcessingResult::EndOfFile => break,
+            LineProcessingResult::EndOfFile => {
+                pb.finish_with_message(format!("File {:?} done!", args.path.file_name().unwrap()));
+                break;
+            }
             LineProcessingResult::Any => (),
         }
 
