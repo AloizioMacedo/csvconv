@@ -24,7 +24,9 @@ fn main() -> Result<(), FileError> {
     let args = Cli::parse();
 
     if args.new_sep.graphemes(true).count() != 1 {
-        panic!()
+        return Err(FileError::Delimiter(DelimiterError {
+            invalid_delimiter: args.new_sep,
+        }));
     }
 
     let file_to_read = File::open(&args.path)?;
@@ -190,6 +192,7 @@ enum LineProcessingResult {
 enum FileError {
     IoError(std::io::Error),
     DifferentCount(CountError),
+    Delimiter(DelimiterError),
 }
 
 impl From<std::io::Error> for FileError {
@@ -224,3 +227,22 @@ impl fmt::Display for CountError {
 }
 
 impl std::error::Error for CountError {}
+
+#[derive(Debug)]
+pub struct DelimiterError {
+    invalid_delimiter: String,
+}
+
+impl fmt::Display for DelimiterError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(
+            &format!(
+                "{} is not a valid delimiter. Please select a one-character delimiter",
+                self.invalid_delimiter
+            ),
+            f,
+        )
+    }
+}
+
+impl std::error::Error for DelimiterError {}
