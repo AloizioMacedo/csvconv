@@ -58,7 +58,7 @@ fn main() -> Result<(), FileError> {
     let args = Cli::parse();
 
     if !args.dir {
-        if *&args.path.is_dir() {
+        if args.path.is_dir() {
             return Err(FileError::FileIsDirectory(FileIsDirectoryError {}));
         }
 
@@ -70,7 +70,7 @@ fn main() -> Result<(), FileError> {
         create_dir_all(parent.join(OUTPUT_FOLDER))?;
 
         let pb = MultiProgress::new();
-        read_dir(PathBuf::from(args.path.to_owned()))?
+        read_dir(&args.path)?
             .par_bridge()
             .into_par_iter()
             .for_each(|file| process_file(&args, file, parent, &pb));
@@ -88,7 +88,7 @@ fn process_file(
     let mut cli_info = CliInfo::new(args);
     let file = file.ok();
 
-    if let None = file {
+    if file.is_none() {
         println!("File couldn't be processed.");
     }
 
@@ -155,7 +155,7 @@ fn parse_file(args: &CliInfo, file_to_write: PathBuf, pb: &MultiProgress) -> Res
             &mut writer,
             &mut size_seen,
             &pb2,
-            &args,
+            args,
             count_from_first_line,
         ),
         LineProcessingResult::Any => {
@@ -176,7 +176,7 @@ fn run_lines_without_consistency_check(
             &mut reader,
             &mut writer,
             &mut size_seen,
-            &pb,
+            pb,
             &args.original_sep,
             &args.new_sep,
             args.check,
