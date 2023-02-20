@@ -1,4 +1,4 @@
-use indicatif::{MultiProgress, ProgressBar};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use std::fmt;
 use std::fs::create_dir_all;
@@ -134,6 +134,15 @@ fn parse_file(args: &CliInfo, file_to_write: PathBuf, pb: &MultiProgress) -> Res
 
     let total_size = file_to_read.metadata()?.len();
     let pb2 = pb.add(ProgressBar::new(total_size));
+
+    let sty = ProgressStyle::with_template(
+        "{spinner:.green} [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})",
+    )
+    .unwrap()
+    .progress_chars("#>-");
+
+    pb2.set_style(sty);
+
     let mut size_seen = 0;
 
     let file_to_write = File::create(file_to_write)?;
