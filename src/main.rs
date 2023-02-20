@@ -12,9 +12,6 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use clap::Parser;
 
-const OUTPUT_NAME: &str = "formatted.csv";
-const OUTPUT_FOLDER: &str = "formatted";
-
 /// CSV Delimiter Converter.
 #[derive(Parser, Debug)]
 struct Cli {
@@ -26,6 +23,10 @@ struct Cli {
 
     /// File or directory path. Directory search is recursive.
     path: std::path::PathBuf,
+
+    /// Name of the output file (resp. directory) for the formatted result (resp. results).
+    #[arg(short, long, default_value_t = String::from("formatted"))]
+    output: String,
 
     /// Checks if the file is valid csv by counting delimiters in the lines.
     #[arg(short, long)]
@@ -53,13 +54,19 @@ impl CliInfo {
 fn main() -> Result<(), FileError> {
     let args = Cli::parse();
 
+    if let Some(input_name) = args.path.to_str() {
+        if input_name == args.output {
+            return Err(FileError::OutputWithSameName(OutputWithSameNameError {}));
+        }
+    }
+
     if !args.path.is_dir() {
         let pb = MultiProgress::new();
-        return parse_file(&CliInfo::new(&args), PathBuf::from(OUTPUT_NAME), &pb);
+        return parse_file(&CliInfo::new(&args), PathBuf::from(args.output), &pb);
     } else {
         let parent = args.path.parent().expect("Could not get parent folder.");
 
-        create_dir_all(parent.join(OUTPUT_FOLDER))?;
+        create_dir_all(parent.join(&args.output))?;
 
         let pb = MultiProgress::new();
 
@@ -85,9 +92,9 @@ fn process_file(
     let file = file.unwrap();
     cli_info.path = file.path();
 
-    if let Err(error) = parse_file(&cli_info, parent.join(OUTPUT_FOLDER).join(file.path()), pb) {
+    if let Err(error) = parse_file(&cli_info, parent.join(&args.output).join(file.path()), pb) {
         println!("{:?}", cli_info.path);
-        println!("{:?}", parent.join(OUTPUT_FOLDER).join(file.path()));
+        println!("{:?}", parent.join(&args.output).join(file.path()));
         println!(
             "File {:?} couldn't be processed. {:?}.",
             file.file_name(),
@@ -98,7 +105,7 @@ fn process_file(
 
 fn parse_file(args: &CliInfo, file_to_write: PathBuf, pb: &MultiProgress) -> Result<(), FileError> {
     create_dir_all(
-        &file_to_write
+        file_to_write
             .parent()
             .expect("Could not get parent folder."),
     )?;
@@ -315,6 +322,7 @@ enum FileError {
     DifferentCount(CountError),
     Delimiter(DelimiterError),
     FileIsDirectory(FileIsDirectoryError),
+    OutputWithSameName(OutputWithSameNameError),
 }
 
 impl From<std::io::Error> for FileError {
@@ -379,3 +387,14 @@ impl fmt::Display for FileIsDirectoryError {
 }
 
 impl std::error::Error for FileIsDirectoryError {}
+
+#[derive(Debug)]
+pub struct OutputWithSameNameError {}
+
+impl fmt::Display for OutputWithSameNameError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt("", f)
+    }
+}
+
+impl std::error::Error for OutputWithSameNameError {}
