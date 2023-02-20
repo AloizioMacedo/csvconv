@@ -1,4 +1,5 @@
 use indicatif::ProgressBar;
+use std::fmt;
 use std::{
     fs::File,
     io::{BufRead, BufReader, BufWriter, Write},
@@ -19,7 +20,7 @@ struct Cli {
     check: bool,
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<(), FileError> {
     let args = Cli::parse();
 
     if args.new_sep.graphemes(true).count() != 1 {
@@ -102,7 +103,9 @@ fn run_lines_with_consistency_check(
     pb: &ProgressBar,
     args: &Cli,
     number_to_compare: usize,
-) -> Result<(), std::io::Error> {
+) -> Result<(), FileError> {
+    let mut line_number = 2;
+
     loop {
         let next_line_result = process_line(
             reader,
@@ -117,12 +120,18 @@ fn run_lines_with_consistency_check(
         match next_line_result {
             LineProcessingResult::Some(number_in_this_line) => {
                 if number_to_compare != number_in_this_line {
-                    panic!()
+                    return Err(FileError::DifferentCount(CountError {
+                        delimiters_at_header: number_to_compare,
+                        delimiters_at_line: number_in_this_line,
+                        line_number,
+                    }));
                 }
             }
             LineProcessingResult::EndOfFile => break,
             LineProcessingResult::Any => (),
         }
+
+        line_number += 1;
     }
 
     Ok(())
@@ -176,3 +185,42 @@ enum LineProcessingResult {
     Any,
     EndOfFile,
 }
+
+#[derive(Debug)]
+enum FileError {
+    IoError(std::io::Error),
+    DifferentCount(CountError),
+}
+
+impl From<std::io::Error> for FileError {
+    fn from(err: std::io::Error) -> FileError {
+        FileError::IoError(err)
+    }
+}
+
+impl From<CountError> for FileError {
+    fn from(err: CountError) -> FileError {
+        FileError::DifferentCount(err)
+    }
+}
+
+#[derive(Debug)]
+pub struct CountError {
+    delimiters_at_header: usize,
+    delimiters_at_line: usize,
+    line_number: usize,
+}
+
+impl fmt::Display for CountError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(
+            &format!(
+                "{} delimiters at header, while {} at line {}.",
+                self.delimiters_at_header, self.delimiters_at_line, self.line_number
+            ),
+            f,
+        )
+    }
+}
+
+impl std::error::Error for CountError {}
