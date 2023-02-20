@@ -1,14 +1,17 @@
 use indicatif::ProgressBar;
 use std::fmt;
+use std::fs::create_dir_all;
+use std::path::PathBuf;
 use std::{
-    fs::File,
+    fs::{read_dir, File},
     io::{BufRead, BufReader, BufWriter, Write},
 };
 use unicode_segmentation::UnicodeSegmentation;
 
 use clap::Parser;
 
-const OUTPUT_NAME: &str = "new.csv";
+const OUTPUT_NAME: &str = "formatted.csv";
+const OUTPUT_FOLDER: &str = "formatted";
 
 #[derive(Parser)]
 struct Cli {
@@ -18,14 +21,74 @@ struct Cli {
 
     #[arg(short, long)]
     check: bool,
+
+    #[arg(short, long)]
+    dir: bool,
+}
+
+struct CliInfo {
+    original_sep: String,
+    new_sep: String,
+    path: std::path::PathBuf,
+    check: bool,
+}
+
+impl CliInfo {
+    fn new(value: &Cli) -> Self {
+        CliInfo {
+            original_sep: value.original_sep.to_owned(),
+            new_sep: value.new_sep.to_owned(),
+            path: value.path.to_owned(),
+            check: value.check,
+        }
+    }
 }
 
 fn main() -> Result<(), FileError> {
     let args = Cli::parse();
 
+    if !args.dir {
+        if *&args.path.is_dir() {
+            return Err(FileError::FileIsDirectory(FileIsDirectoryError {}));
+        }
+
+        parse_file(&CliInfo::new(&args), PathBuf::from(OUTPUT_NAME))
+    } else {
+        let parent = args.path.parent().expect("Could not get parent folder.");
+
+        create_dir_all(parent.join(OUTPUT_FOLDER))?;
+
+        for file in read_dir(PathBuf::from(args.path.to_owned()))? {
+            let mut cli_info = CliInfo::new(&args);
+
+            let file = file.ok();
+
+            if let None = file {
+                continue;
+            }
+
+            let file = file.unwrap();
+            cli_info.path = file.path();
+
+            if let Err(error) =
+                parse_file(&cli_info, parent.join(OUTPUT_FOLDER).join(file.file_name()))
+            {
+                println!(
+                    "File {:?} couldn't be processed. {:?}.",
+                    file.file_name(),
+                    error
+                );
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn parse_file(args: &CliInfo, file_to_write: PathBuf) -> Result<(), FileError> {
     if args.new_sep.graphemes(true).count() != 1 {
         return Err(FileError::Delimiter(DelimiterError {
-            invalid_delimiter: args.new_sep,
+            invalid_delimiter: args.new_sep.to_owned(),
         }));
     }
 
@@ -35,7 +98,7 @@ fn main() -> Result<(), FileError> {
     let mut size_seen = 0;
     let pb = ProgressBar::new(total_size);
 
-    let file_to_write = File::create(std::path::PathBuf::from(OUTPUT_NAME))?;
+    let file_to_write = File::create(file_to_write)?;
 
     let mut reader = BufReader::new(file_to_read);
     let mut writer = BufWriter::new(file_to_write);
@@ -77,7 +140,7 @@ fn run_lines_without_consistency_check(
     mut writer: BufWriter<File>,
     mut size_seen: usize,
     pb: ProgressBar,
-    args: Cli,
+    args: &CliInfo,
 ) -> Result<(), std::io::Error> {
     loop {
         let next_line_result = process_line(
@@ -103,7 +166,7 @@ fn run_lines_with_consistency_check(
     writer: &mut BufWriter<File>,
     size_seen: &mut usize,
     pb: &ProgressBar,
-    args: &Cli,
+    args: &CliInfo,
     number_to_compare: usize,
 ) -> Result<(), FileError> {
     let mut line_number = 2;
@@ -193,6 +256,7 @@ enum FileError {
     IoError(std::io::Error),
     DifferentCount(CountError),
     Delimiter(DelimiterError),
+    FileIsDirectory(FileIsDirectoryError),
 }
 
 impl From<std::io::Error> for FileError {
@@ -246,3 +310,14 @@ impl fmt::Display for DelimiterError {
 }
 
 impl std::error::Error for DelimiterError {}
+
+#[derive(Debug)]
+pub struct FileIsDirectoryError {}
+
+impl fmt::Display for FileIsDirectoryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt("", f)
+    }
+}
+
+impl std::error::Error for FileIsDirectoryError {}
