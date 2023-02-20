@@ -1,10 +1,9 @@
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use itertools::Itertools;
+use rayon::iter::ParallelIterator;
+use rayon::prelude::*;
 use std::fmt;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
-use std::thread;
-use std::thread::available_parallelism;
 use std::{
     fs::{read_dir, File},
     io::{BufRead, BufReader, BufWriter, Write},
@@ -70,25 +69,11 @@ fn main() -> Result<(), FileError> {
 
         create_dir_all(parent.join(OUTPUT_FOLDER))?;
 
-        let n_parallel = match available_parallelism() {
-            Ok(non_zero) => non_zero.get(),
-            _ => 1,
-        };
-
-        let files_chunks = read_dir(PathBuf::from(args.path.to_owned()))?.chunks(n_parallel);
-        let files_chunks = files_chunks.into_iter();
-
-        for files in files_chunks {
-            let pb = MultiProgress::new();
-
-            thread::scope(|s| {
-                for file in files {
-                    s.spawn(|| {
-                        process_file(&args, file, parent, &pb);
-                    });
-                }
-            });
-        }
+        let pb = MultiProgress::new();
+        read_dir(PathBuf::from(args.path.to_owned()))?
+            .par_bridge()
+            .into_par_iter()
+            .for_each(|file| process_file(&args, file, parent, &pb));
     }
 
     Ok(())
@@ -198,6 +183,8 @@ fn run_lines_without_consistency_check(
         )?;
 
         if let LineProcessingResult::EndOfFile = next_line_result {
+            pb.finish_and_clear();
+
             break;
         }
     }
@@ -238,7 +225,7 @@ fn run_lines_with_consistency_check(
                         "File {:?}: {error:?}",
                         args.path.file_name().unwrap()
                     ));
-                    return Err(FileError::DifferentCount(error));
+                    break;
                 }
             }
             LineProcessingResult::EndOfFile => {
