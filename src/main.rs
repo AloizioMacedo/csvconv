@@ -49,52 +49,84 @@ fn main() -> std::io::Result<()> {
 
     match first_line_result {
         LineProcessingResult::EndOfFile => Ok(()),
-        LineProcessingResult::Some(x) => {
-            loop {
-                let next_line_result = process_line(
-                    &mut reader,
-                    &mut writer,
-                    &mut size_seen,
-                    &pb,
-                    &args.original_sep,
-                    &args.new_sep,
-                    args.check,
-                )?;
-
-                match next_line_result {
-                    LineProcessingResult::Some(y) => {
-                        if x != y {
-                            panic!()
-                        }
-                    }
-                    LineProcessingResult::EndOfFile => break,
-                    LineProcessingResult::Any => (),
-                }
-            }
+        LineProcessingResult::Some(count_from_first_line) => {
+            run_lines_with_consistency_check(
+                &mut reader,
+                &mut writer,
+                &mut size_seen,
+                &pb,
+                &args,
+                count_from_first_line,
+            )?;
 
             Ok(())
         }
         LineProcessingResult::Any => {
-            loop {
-                let next_line_result = process_line(
-                    &mut reader,
-                    &mut writer,
-                    &mut size_seen,
-                    &pb,
-                    &args.original_sep,
-                    &args.new_sep,
-                    args.check,
-                )?;
-
-                match next_line_result {
-                    LineProcessingResult::EndOfFile => break,
-                    _ => (),
-                }
-            }
+            run_lines_without_consistency_check(reader, writer, size_seen, pb, args)?;
 
             Ok(())
         }
     }
+}
+
+fn run_lines_without_consistency_check(
+    mut reader: BufReader<File>,
+    mut writer: BufWriter<File>,
+    mut size_seen: usize,
+    pb: ProgressBar,
+    args: Cli,
+) -> Result<(), std::io::Error> {
+    loop {
+        let next_line_result = process_line(
+            &mut reader,
+            &mut writer,
+            &mut size_seen,
+            &pb,
+            &args.original_sep,
+            &args.new_sep,
+            args.check,
+        )?;
+
+        match next_line_result {
+            LineProcessingResult::EndOfFile => break,
+            _ => (),
+        }
+    }
+
+    Ok(())
+}
+
+fn run_lines_with_consistency_check(
+    reader: &mut BufReader<File>,
+    writer: &mut BufWriter<File>,
+    size_seen: &mut usize,
+    pb: &ProgressBar,
+    args: &Cli,
+    number_to_compare: usize,
+) -> Result<(), std::io::Error> {
+    loop {
+        let next_line_result = process_line(
+            reader,
+            writer,
+            size_seen,
+            pb,
+            &args.original_sep,
+            &args.new_sep,
+            args.check,
+        )?;
+
+        match next_line_result {
+            LineProcessingResult::Some(number_in_this_line) => {
+                if number_to_compare != number_in_this_line {
+                    panic!()
+                }
+            }
+            LineProcessingResult::EndOfFile => break,
+            LineProcessingResult::Any => (),
+        }
+    }
+
+    Ok(())
 }
 
 fn get_number_of_delimiters(buffer: &String, original_sep: &String) -> usize {
