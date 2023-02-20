@@ -22,7 +22,7 @@ struct Cli {
 fn main() -> std::io::Result<()> {
     let args = Cli::parse();
 
-    if !(args.new_sep.graphemes(true).count() == 1) {
+    if args.new_sep.graphemes(true).count() != 1 {
         panic!()
     }
 
@@ -87,9 +87,8 @@ fn run_lines_without_consistency_check(
             args.check,
         )?;
 
-        match next_line_result {
-            LineProcessingResult::EndOfFile => break,
-            _ => (),
+        if let LineProcessingResult::EndOfFile = next_line_result {
+            break;
         }
     }
 
@@ -129,7 +128,7 @@ fn run_lines_with_consistency_check(
     Ok(())
 }
 
-fn get_number_of_delimiters(buffer: &String, original_sep: &String) -> usize {
+fn get_number_of_delimiters(buffer: &str, original_sep: &str) -> usize {
     buffer
         .graphemes(true)
         .filter(|&x| x == original_sep.graphemes(true).last().unwrap())
@@ -141,8 +140,8 @@ fn process_line(
     writer: &mut BufWriter<File>,
     size_seen: &mut usize,
     pb: &ProgressBar,
-    original_sep: &String,
-    new_sep: &String,
+    original_sep: &str,
+    new_sep: &str,
     check_consistency: bool,
 ) -> Result<LineProcessingResult, std::io::Error> {
     let mut buffer = String::new();
@@ -155,7 +154,7 @@ fn process_line(
         let number_of_delimiters = get_number_of_delimiters(&buffer, original_sep);
 
         let buffer = buffer.replace(original_sep, new_sep);
-        writer.write(&buffer.as_bytes())?;
+        writer.write_all(buffer.as_bytes())?;
 
         *size_seen += buffer.len();
         pb.set_position(*size_seen as u64);
@@ -163,7 +162,7 @@ fn process_line(
         Ok(LineProcessingResult::Some(number_of_delimiters))
     } else {
         let buffer = buffer.replace(original_sep, new_sep);
-        writer.write(&buffer.as_bytes())?;
+        writer.write_all(buffer.as_bytes())?;
 
         *size_seen += buffer.len();
         pb.set_position(*size_seen as u64);
