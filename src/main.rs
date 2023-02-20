@@ -52,7 +52,13 @@ impl CliInfo {
 }
 
 fn main() -> Result<(), FileError> {
-    let args = Cli::parse();
+    let mut args = Cli::parse();
+
+    if !args.path.is_dir() {
+        args.output = String::from("formatted.csv")
+    }
+
+    let args = args;
 
     if let Some(input_name) = args.path.to_str() {
         if input_name == args.output {
