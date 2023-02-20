@@ -16,15 +16,23 @@ use clap::Parser;
 const OUTPUT_NAME: &str = "formatted.csv";
 const OUTPUT_FOLDER: &str = "formatted";
 
-#[derive(Parser)]
+/// CSV Delimiter Converter.
+#[derive(Parser, Debug)]
 struct Cli {
-    original_sep: String,
-    new_sep: String,
+    /// Original string delimiter. Must be one character.
+    original_delimiter: String,
+
+    /// New string delimiter. Must be one character.
+    new_delimiter: String,
+
+    /// File or directory path. If directory, must add --dir option to call.
     path: std::path::PathBuf,
 
+    /// Checks if the file is valid csv by counting delimiters in the lines.
     #[arg(short, long)]
     check: bool,
 
+    /// Allows for whole directory run.
     #[arg(short, long)]
     dir: bool,
 }
@@ -39,8 +47,8 @@ struct CliInfo {
 impl CliInfo {
     fn new(value: &Cli) -> Self {
         CliInfo {
-            original_sep: value.original_sep.to_owned(),
-            new_sep: value.new_sep.to_owned(),
+            original_sep: value.original_delimiter.to_owned(),
+            new_sep: value.new_delimiter.to_owned(),
             path: value.path.to_owned(),
             check: value.check,
         }
