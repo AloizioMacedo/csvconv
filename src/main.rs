@@ -14,6 +14,9 @@ struct Cli {
     original_sep: String,
     new_sep: String,
     path: std::path::PathBuf,
+
+    #[arg(short, long)]
+    check: bool,
 }
 
 fn main() -> std::io::Result<()> {
@@ -34,34 +37,111 @@ fn main() -> std::io::Result<()> {
     let mut reader = BufReader::new(file_to_read);
     let mut writer = BufWriter::new(file_to_write);
 
-    let mut count = 0;
+    let first_line_result = process_line(
+        &mut reader,
+        &mut writer,
+        &mut size_seen,
+        &pb,
+        &args.original_sep,
+        &args.new_sep,
+        args.check,
+    )?;
 
-    loop {
-        let mut buffer = String::new();
+    match first_line_result {
+        LineProcessingResult::EndOfFile => Ok(()),
+        LineProcessingResult::Some(x) => {
+            loop {
+                let next_line_result = process_line(
+                    &mut reader,
+                    &mut writer,
+                    &mut size_seen,
+                    &pb,
+                    &args.original_sep,
+                    &args.new_sep,
+                    args.check,
+                )?;
 
-        if let Ok(0) = reader.read_line(&mut buffer) {
-            break;
-        }
-
-        size_seen += buffer.len();
-        pb.set_position(size_seen as u64);
-
-        let this_count = buffer
-            .graphemes(true)
-            .filter(|&x| x == args.original_sep.graphemes(true).last().unwrap())
-            .count();
-
-        if count == 0 {
-            count = this_count
-        } else {
-            if this_count != count {
-                panic!()
+                match next_line_result {
+                    LineProcessingResult::Some(y) => {
+                        if x != y {
+                            panic!()
+                        }
+                    }
+                    LineProcessingResult::EndOfFile => break,
+                    LineProcessingResult::Any => (),
+                }
             }
-        }
 
-        let buffer = buffer.replace(&args.original_sep, &args.new_sep);
-        writer.write(&buffer.as_bytes())?;
+            Ok(())
+        }
+        LineProcessingResult::Any => {
+            loop {
+                let next_line_result = process_line(
+                    &mut reader,
+                    &mut writer,
+                    &mut size_seen,
+                    &pb,
+                    &args.original_sep,
+                    &args.new_sep,
+                    args.check,
+                )?;
+
+                match next_line_result {
+                    LineProcessingResult::EndOfFile => break,
+                    _ => (),
+                }
+            }
+
+            Ok(())
+        }
+    }
+}
+
+fn get_number_of_delimiters(buffer: &String, original_sep: &String) -> usize {
+    buffer
+        .graphemes(true)
+        .filter(|&x| x == original_sep.graphemes(true).last().unwrap())
+        .count()
+}
+
+fn process_line(
+    reader: &mut BufReader<File>,
+    writer: &mut BufWriter<File>,
+    size_seen: &mut usize,
+    pb: &ProgressBar,
+    original_sep: &String,
+    new_sep: &String,
+    check_consistency: bool,
+) -> Result<LineProcessingResult, std::io::Error> {
+    let mut buffer = String::new();
+
+    if let Ok(0) = reader.read_line(&mut buffer) {
+        return Ok(LineProcessingResult::EndOfFile);
     }
 
-    Ok(())
+    if check_consistency {
+        let number_of_delimiters = get_number_of_delimiters(&buffer, original_sep);
+
+        let buffer = buffer.replace(original_sep, new_sep);
+        writer.write(&buffer.as_bytes())?;
+
+        *size_seen += buffer.len();
+        pb.set_position(*size_seen as u64);
+
+        Ok(LineProcessingResult::Some(number_of_delimiters))
+    } else {
+        let buffer = buffer.replace(original_sep, new_sep);
+        writer.write(&buffer.as_bytes())?;
+
+        *size_seen += buffer.len();
+        pb.set_position(*size_seen as u64);
+
+        Ok(LineProcessingResult::Any)
+    }
+}
+
+enum LineProcessingResult {
+    Some(usize),
+    Any,
+    EndOfFile,
 }
