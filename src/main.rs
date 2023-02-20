@@ -25,6 +25,7 @@ struct Cli {
     new_delimiter: String,
 
     /// File or directory path. If directory, must add --dir option to call.
+    /// Directory search is recursive.
     path: std::path::PathBuf,
 
     /// Checks if the file is valid csv by counting delimiters in the lines.
@@ -70,10 +71,8 @@ fn main() -> Result<(), FileError> {
         create_dir_all(parent.join(OUTPUT_FOLDER))?;
 
         let pb = MultiProgress::new();
-        read_dir(&args.path)?
-            .par_bridge()
-            .into_par_iter()
-            .for_each(|file| process_file(&args, file, parent, &pb));
+
+        visit_dirs(&args.path, &args, parent, &pb)?
     }
 
     Ok(())
@@ -81,12 +80,12 @@ fn main() -> Result<(), FileError> {
 
 fn process_file(
     args: &Cli,
-    file: Result<std::fs::DirEntry, std::io::Error>,
+    file: &Result<std::fs::DirEntry, std::io::Error>,
     parent: &std::path::Path,
     pb: &MultiProgress,
 ) {
     let mut cli_info = CliInfo::new(args);
-    let file = file.ok();
+    let file = file.as_ref().ok();
 
     if file.is_none() {
         println!("File couldn't be processed.");
@@ -95,11 +94,9 @@ fn process_file(
     let file = file.unwrap();
     cli_info.path = file.path();
 
-    if let Err(error) = parse_file(
-        &cli_info,
-        parent.join(OUTPUT_FOLDER).join(file.file_name()),
-        pb,
-    ) {
+    if let Err(error) = parse_file(&cli_info, parent.join(OUTPUT_FOLDER).join(file.path()), pb) {
+        println!("{:?}", cli_info.path);
+        println!("{:?}", parent.join(OUTPUT_FOLDER).join(file.path()));
         println!(
             "File {:?} couldn't be processed. {:?}.",
             file.file_name(),
@@ -109,6 +106,12 @@ fn process_file(
 }
 
 fn parse_file(args: &CliInfo, file_to_write: PathBuf, pb: &MultiProgress) -> Result<(), FileError> {
+    create_dir_all(
+        &file_to_write
+            .parent()
+            .expect("Could not get parent folder."),
+    )?;
+
     if args.new_sep.graphemes(true).count() != 1 {
         return Err(FileError::Delimiter(DelimiterError {
             invalid_delimiter: args.new_sep.to_owned(),
@@ -281,6 +284,31 @@ fn process_line(
         pb.set_position(*size_seen as u64);
 
         Ok(LineProcessingResult::Any)
+    }
+}
+
+fn visit_dirs(
+    dir: &PathBuf,
+    args: &Cli,
+    parent: &std::path::Path,
+    pb: &MultiProgress,
+) -> Result<(), FileError> {
+    if dir.is_dir() {
+        read_dir(dir)?.par_bridge().for_each(|file| {
+            if let Ok(x) = file {
+                let path = x.path();
+                if path.is_dir() {
+                    visit_dirs(&path, args, parent, pb)
+                        .expect("Unexpected non-directory inside visit_dirs loop");
+                } else {
+                    process_file(args, &Ok(x), parent, pb);
+                }
+            }
+        });
+
+        Ok(())
+    } else {
+        Err(FileError::FileIsDirectory(FileIsDirectoryError {}))
     }
 }
 
