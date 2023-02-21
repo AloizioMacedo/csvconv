@@ -12,6 +12,8 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use clap::Parser;
 
+const DEFAULT_NAME: &str = "formatted";
+
 /// CSV Delimiter Converter.
 #[derive(Parser, Debug)]
 struct Cli {
@@ -25,7 +27,7 @@ struct Cli {
     path: std::path::PathBuf,
 
     /// Name of the output file (resp. directory) for the formatted result (resp. results).
-    #[arg(short, long, default_value_t = String::from("formatted"))]
+    #[arg(short, long, default_value_t = String::from(DEFAULT_NAME))]
     output: String,
 
     /// Checks if the file is valid csv by counting delimiters in the lines.
@@ -54,8 +56,8 @@ impl CliInfo {
 fn main() -> Result<(), FileError> {
     let mut args = Cli::parse();
 
-    if !args.path.is_dir() {
-        args.output = String::from("formatted.csv")
+    if !args.path.is_dir() && args.output == DEFAULT_NAME {
+        args.output = String::from(format!("{}.csv", DEFAULT_NAME))
     }
 
     let args = args;
