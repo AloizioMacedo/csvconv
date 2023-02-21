@@ -1,0 +1,47 @@
+name: Rust
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_ubuntu:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: cargo build -r --verbose
+      - uses: actions/upload-artifact@v3
+        with:
+          name: csvconv-ubuntu
+          path: target/release/csvconv
+
+  build_windows:
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: cargo build -r --verbose
+      - uses: actions/upload-artifact@v3
+        with:
+          name: csvconv-windows
+          path: target/release/csvconv.exe
+
+  build_mac:
+    runs-on: macos-12
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: cargo build -r --verbose
+      - uses: actions/upload-artifact@v3
+        with:
+          name: csvconv-mac
+          path: target/release/csvconv
